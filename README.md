@@ -1,13 +1,20 @@
-CREATE OR REPLACE TEMP VIEW dedup_updates AS
-SELECT order_id, customer_id, product, amount, order_date, update_ts
-FROM (
-    SELECT *,
-           ROW_NUMBER() OVER (
-               PARTITION BY order_id
-               ORDER BY update_ts DESC
-           ) AS rn
-    FROM change_feed
-)
-WHERE rn = 1;
+MERGE INTO retail_orders AS target
+USING dedup_updates AS source
+ON target.order_id = source.order_id
 
-SELECT * FROM dedup_updates ORDER BY order_id;
+WHEN MATCHED THEN
+  UPDATE SET
+    target.customer_id = source.customer_id,
+    target.product = source.product,
+    target.amount = source.amount,
+    target.order_date = source.order_date
+
+WHEN NOT MATCHED THEN
+  INSERT (order_id, customer_id, product, amount, order_date)
+  VALUES (
+    source.order_id,
+    source.customer_id,
+    source.product,
+    source.amount,
+    source.order_date
+  );
