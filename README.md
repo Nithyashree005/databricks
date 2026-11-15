@@ -1,52 +1,39 @@
-# databricks
-from pyspark.sql.types import StructType, StructField, StringType, DoubleType
+# Snapshot profiling
+print("===== SNAPSHOT QUALITY PROFILE =====")
+print("Row count:", snapshot_df.count())
+print("Distinct order IDs:", snapshot_df.select("order_id").distinct().count())
 
-# -------------------------
-# ORDER SNAPSHOT
-# -------------------------
-snapshot_data = [
-    ("ORD001", "CUST101", "Laptop",   65000.0, "2026-11-10"),
-    ("ORD002", "CUST102", "Phone",    30000.0, "2026-11-10"),
-    ("ORD003", "CUST103", "Tablet",   25000.0, "2026-11-11"),
-    ("ORD004", "CUST104", "Monitor",  15000.0, "2026-11-11"),
-    ("ORD005", None,      "Keyboard",  3000.0, "2026-11-12"),
-    ("ORD006", "CUST106", "Mouse",     1500.0, "2026-11-12")
-]
+snapshot_df.select([
+    F.sum(F.col(c).isNull().cast("int")).alias(c)
+    for c in snapshot_df.columns
+]).show()
 
-schema = StructType([
-    StructField("order_id", StringType(), True),
-    StructField("customer_id", StringType(), True),
-    StructField("product", StringType(), True),
-    StructField("amount", DoubleType(), True),
-    StructField("order_date", StringType(), True)
-])
+snapshot_df.select(
+    F.min("order_date").alias("min_date"),
+    F.max("order_date").alias("max_date")
+).show()
 
-snapshot_df = spark.createDataFrame(snapshot_data, schema)
 
-# -------------------------
-# CHANGE FEED
-# -------------------------
-change_data = [
-    ("ORD002", "CUST102", "Phone",   32000.0, "2026-11-13", "2026-11-13 09:00:00"),
-    ("ORD002", "CUST102", "Phone",   35000.0, "2026-11-13", "2026-11-13 11:00:00"),
-    ("ORD004", "CUST104", "Monitor", 16000.0, "2026-11-13", "2026-11-13 10:00:00"),
-    ("ORD007", "CUST107", "Headset",  5000.0, "2026-11-14", "2026-11-14 08:00:00"),
-    ("ORD008", None,      "Printer", 12000.0, "2026-11-14", "2026-11-14 09:00:00")
-]
+# Change-feed profiling
+print("===== CHANGE FEED QUALITY PROFILE =====")
+print("Row count:", change_df.count())
+print("Distinct order IDs:", change_df.select("order_id").distinct().count())
 
-change_schema = StructType([
-    StructField("order_id", StringType(), True),
-    StructField("customer_id", StringType(), True),
-    StructField("product", StringType(), True),
-    StructField("amount", DoubleType(), True),
-    StructField("order_date", StringType(), True),
-    StructField("update_ts", StringType(), True)
-])
+change_df.select([
+    F.sum(F.col(c).isNull().cast("int")).alias(c)
+    for c in change_df.columns
+]).show()
 
-change_df = spark.createDataFrame(change_data, change_schema)
+change_df.select(
+    F.min("order_date").alias("min_date"),
+    F.max("order_date").alias("max_date")
+).show()
 
-print("Snapshot:")
-snapshot_df.show()
 
-print("Change Feed:")
-change_df.show()
+# Find duplicate business keys
+print("===== DUPLICATE ORDER IDs IN CHANGE FEED =====")
+
+change_df.groupBy("order_id") \
+    .count() \
+    .filter(F.col("count") > 1) \
+    .show()
