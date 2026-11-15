@@ -1,20 +1,9 @@
-MERGE INTO retail_orders AS target
-USING dedup_updates AS source
-ON target.order_id = source.order_id
+SELECT 'BEFORE MERGE' AS state, order_id, amount
+FROM retail_orders VERSION AS OF 0
+WHERE order_id = 'ORD002'
 
-WHEN MATCHED THEN
-  UPDATE SET
-    target.customer_id = source.customer_id,
-    target.product = source.product,
-    target.amount = source.amount,
-    target.order_date = source.order_date
+UNION ALL
 
-WHEN NOT MATCHED THEN
-  INSERT (order_id, customer_id, product, amount, order_date)
-  VALUES (
-    source.order_id,
-    source.customer_id,
-    source.product,
-    source.amount,
-    source.order_date
-  );
+SELECT 'AFTER MERGE' AS state, order_id, amount
+FROM retail_orders VERSION AS OF 1
+WHERE order_id = 'ORD002';
