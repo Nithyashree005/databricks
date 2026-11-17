@@ -1,0 +1,12 @@
+COMMAND1
+SHOW TABLES IN default;
+COMMAND2
+CREATE OR REPLACE VIEW default.ltmirun31_p1d1_realtime_high_value_sales
+AS
+SELECT
+    transaction_id,
+    customer_id,
+    amount,
+    ingestion_timestamp
+FROM default.ltmirun31_p1d1_bronze_sales
+WHERE amount >= 1000;
