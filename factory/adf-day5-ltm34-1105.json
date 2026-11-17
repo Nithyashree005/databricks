@@ -1,0 +1,15 @@
+{
+	"name": "adf-day5-ltm34-1105",
+	"properties": {
+		"trustModeClaimForMi": {
+			"value": "Disabled",
+			"editable": true
+		}
+	},
+	"location": "eastus",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "73d16154-e297-40a6-84d0-bc7570e392c6",
+		"tenantId": "b004a8b0-87e2-43c3-9940-c62feee15ff9"
+	}
+}
