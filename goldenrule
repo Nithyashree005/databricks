@@ -1,0 +1,331 @@
+# Golden Signals & USE Bottleneck Analysis
+
+## 1\. Executive Summary
+
+The Golden Signals and USE analysis identifies **database connection pool saturation** as the primary bottleneck affecting the application.
+
+The strongest degradation occurs on POST /api/v1/checkout and POST /api/v1/reports/export. Both endpoints consume the maximum **50/50 database connections** and have requests waiting for database connections.
+
+POST /api/v1/checkout has a P99 latency of **6800 ms**, an error rate of **17.65%**, **98% worker\-thread utilization**, and **142 database requests waiting**.
+
+POST /api/v1/reports/export also reaches **50/50 database connections**, has **68 waiting database requests**, and an error rate of **28.89%**.
+
+In comparison, CPU utilization is only **41.5%**, memory utilization is **62.4%**, and network bandwidth utilization is **28.3%**. Therefore, CPU, memory, and network bandwidth are not the primary bottlenecks.
+
+The evidence indicates that database connection pool exhaustion blocks application workers, increases request latency, generates errors, and eventually contributes to TCP listen backlog saturation.
+
+---
+
+## 2\. Four Golden Signals Analysis
+
+### Endpoint Analysis
+
+| Endpoint | Traffic | P50 | P90 | P99 | Error Rate | Saturation | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| GET /api/v1/items/\{id\} | 580 RPS | 18 ms | 42 ms | 95 ms | 0.0% | 24/200 threads, 8/50 DB connections | HEALTHY |
+| POST /api/v1/checkout | 340 RPS | 280 ms | 2450 ms | 6800 ms | 17.65% | 196/200 threads, 50/50 DB connections, 142 waiting | CRITICAL\_DEGRADED |
+| GET /api/v1/search | 420 RPS | 45 ms | 110 ms | 280 ms | 0.0% | 38/200 threads, 12/50 DB connections | HEALTHY |
+| POST /api/v1/reports/export | 45 RPS | 1200 ms | 4800 ms | Not visible in supplied screenshot | 28.89% | 45/200 threads, 50/50 DB connections, 68 waiting | CRITICAL\_DEGRADED |
+| GET /api/v1/health | 60 RPS | 2 ms | 5 ms | 12 ms | 0.0% | 2/200 threads, 0/50 DB connections | HEALTHY |
+
+### 2.1 Latency
+
+Latency differs significantly between healthy and degraded endpoints.
+
+GET /api/v1/items/\{id\} has a P99 latency of only **95 ms**, while GET /api/v1/search has a P99 latency of **280 ms** and GET /api/v1/health has a P99 latency of just **12 ms**.
+
+In contrast, POST /api/v1/checkout reaches a P99 latency of **6800 ms**, showing severe tail\-latency degradation.
+
+POST /api/v1/reports/export also shows very high latency, including an average error latency of **10200 ms**.
+
+This indicates that the performance problem is concentrated in endpoints that heavily depend on saturated database connections.
+
+### 2.2 Traffic
+
+Traffic alone is not causing the degradation.
+
+GET /api/v1/items/\{id\} handles **580 RPS**, which is higher than the **340 RPS** handled by POST /api/v1/checkout, but the items endpoint remains healthy.
+
+Similarly:
+
+- GET /api/v1/search: **420 RPS**
+- POST /api/v1/checkout: **340 RPS**
+- GET /api/v1/health: **60 RPS**
+- POST /api/v1/reports/export: **45 RPS**
+
+The degraded reports endpoint processes only **45 RPS**, demonstrating that high traffic alone is not responsible for the failures.
+
+### 2.3 Errors
+
+The healthy endpoints show a **0.0% error rate**:
+
+- GET /api/v1/items/\{id\}: **0.0%**
+- GET /api/v1/search: **0.0%**
+- GET /api/v1/health: **0.0%**
+
+The degraded endpoints show substantial errors:
+
+- POST /api/v1/checkout: **17.65%**
+- POST /api/v1/reports/export: **28.89%**
+
+Checkout recorded:
+
+- HTTP 2xx: **8160**
+- HTTP 4xx: **240**
+- HTTP 5xx: **1800**
+
+Reports/export recorded:
+
+- HTTP 2xx: **945**
+- HTTP 4xx: **15**
+- HTTP 5xx: **390**
+
+The error pattern correlates strongly with database connection pool exhaustion.
+
+### 2.4 Saturation
+
+Saturation provides the strongest indication of the root cause.
+
+The healthy GET /api/v1/items/\{id\} endpoint uses:
+
+- **24/200 worker threads**
+- **12% thread utilization**
+- **8/50 DB connections**
+
+GET /api/v1/search uses:
+
+- **38/200 worker threads**
+- **19% thread utilization**
+- **12/50 DB connections**
+
+GET /api/v1/health uses:
+
+- **2/200 worker threads**
+- **1% thread utilization**
+- **0/50 DB connections**
+
+In contrast, POST /api/v1/checkout reaches:
+
+- **196/200 worker threads**
+- **98% thread utilization**
+- **50/50 DB connections**
+- **142 DB requests waiting**
+
+The reports/export endpoint also reaches:
+
+- **50/50 DB connections**
+- **68 DB requests waiting**
+
+Therefore, database connection saturation directly correlates with endpoint degradation.
+
+---
+
+## 3\. USE Methodology Analysis
+
+The USE methodology evaluates each resource according to:
+
+- **Utilization**
+- **Saturation**
+- **Errors**
+
+### USE Resource Matrix
+
+| Resource | Utilization | Saturation / Errors | Assessment |
+| --- | --- | --- | --- |
+| CPU | 41.5% | Warning 75%, Critical 90% | NORMAL |
+| Memory | 62.4% | Warning 80%, Critical 95%; swap 0 pages/sec; OOM events 0 | NORMAL |
+| Database Connection Pool | 50/50 connections on degraded endpoints | 142 checkout requests and 68 report requests waiting | PRIMARY BOTTLENECK |
+| Network Socket Backlog | 28.3% network utilization | 48 TCP listen backlog drops/sec, capacity limit 5 | WARNING / SECONDARY EFFECT |
+
+### 3.1 CPU
+
+CPU utilization is **41.5%**.
+
+The configured thresholds are:
+
+- Warning: **75%**
+- Critical: **90%**
+
+CPU utilization is therefore well below both thresholds.
+
+The system has significant CPU headroom and CPU compute capacity is not responsible for the observed latency and errors.
+
+### 3.2 Memory
+
+Memory utilization is **62.4%**.
+
+Thresholds are:
+
+- Warning: **80%**
+- Critical: **95%**
+
+Additional memory indicators show:
+
+- Swap activity: **0 pages/sec**
+- OOM killer invocations: **0**
+
+There is no evidence of memory pressure, swapping, or out\-of\-memory conditions.
+
+Therefore, memory is not the bottleneck.
+
+### 3.3 Database Connection Pool
+
+The database connection pool is the primary bottleneck.
+
+Both affected endpoints reach the maximum connection capacity of:
+
+**50 active connections out of 50 available connections.**
+
+For checkout:
+
+- DB connections: **50/50**
+- Waiting requests: **142**
+- Worker\-thread utilization: **98%**
+
+For reports/export:
+
+- DB connections: **50/50**
+- Waiting requests: **68**
+
+Once all database connections are occupied, new requests cannot immediately obtain a connection. Requests begin waiting, increasing latency and eventually producing request failures.
+
+This explains why healthy endpoints that consume fewer database connections continue operating normally while database\-intensive endpoints become critically degraded.
+
+### 3.4 Network Socket Backlog
+
+Network bandwidth utilization is **28.3%**.
+
+Thresholds are:
+
+- Warning: **70%**
+- Critical: **85%**
+
+Therefore, network bandwidth itself has substantial remaining capacity.
+
+However:
+
+- TCP listen backlog drops: **48/sec**
+- Backlog capacity limit: **5**
+- Saturation status: **WARNING**
+- TCP retransmission rate: **0.85%**
+- TCP retransmission status: **NORMAL**
+
+The telemetry diagnosis states that the TCP backlog queue experiences spillover because blocked worker threads fail to consume incoming socket connections.
+
+Therefore, TCP backlog saturation is a **secondary symptom** rather than the primary root cause.
+
+---
+
+## 4\. Root Cause Diagnosis
+
+### Primary Root Cause
+
+**Database connection pool saturation is the primary system bottleneck.**
+
+### Evidence
+
+The evidence chain is:
+
+1. CPU utilization is only **41.5%**, below the 75% warning threshold.
+2. Memory utilization is only **62.4%**, below the 80% warning threshold.
+3. There is **0 pages/sec swap activity** and **0 OOM killer events**.
+4. Network bandwidth utilization is only **28.3%**, well below the 70% warning threshold.
+5. Healthy endpoints use only a fraction of the available database connections.
+6. Checkout reaches **50/50 database connections**.
+7. Reports/export also reaches **50/50 database connections**.
+8. Checkout accumulates **142 waiting database requests**.
+9. Reports/export accumulates **68 waiting database requests**.
+10. Checkout worker\-thread utilization reaches **98%**.
+11. Checkout P99 latency rises to **6800 ms**.
+12. Checkout error rate reaches **17.65%**.
+13. Reports/export error rate reaches **28.89%**.
+14. Blocked workers stop consuming network connections quickly enough, contributing to **48 TCP listen backlog drops/sec**.
+
+This correlation isolates the database connection pool as the constrained subsystem.
+
+---
+
+## 5\. Why Horizontal Scaling Alone May Not Fix the Problem
+
+Adding more application instances does not necessarily solve the problem because the constrained resource is the database connection pool.
+
+If additional application instances create additional database connections, the database may receive even more concurrent connection demand.
+
+Therefore, blindly scaling application instances could increase database pressure rather than eliminate the bottleneck.
+
+The database connection lifecycle and actual database capacity should be investigated before increasing the pool size or application replica count.
+
+---
+
+## 6\. Remediation Recommendations
+
+### Immediate Actions
+
+1. Investigate why database connections remain active for long periods.
+2. Check application code for connection leaks.
+3. Ensure every database connection is returned to the connection pool after use.
+4. Investigate long\-running SQL queries and transactions.
+5. Monitor active, idle, maximum, and waiting database connections.
+6. Temporarily reduce or throttle database\-heavy requests if necessary.
+
+### Monitoring Improvements
+
+Create alerts for:
+
+- Database connection pool utilization
+- Active versus maximum DB connections
+- Waiting DB requests
+- Connection acquisition latency
+- Connection timeout count
+- Worker\-thread utilization
+- P99 endpoint latency
+- HTTP 5xx error rate
+- TCP listen backlog drops
+
+A warning should be generated before the pool reaches complete exhaustion. For example, sustained database pool utilization around **80%** can be investigated before it reaches **100%**.
+
+### Application Improvements
+
+Application code should guarantee that connections are released correctly after queries complete.
+
+Long\-running transactions should be minimized because each long\-running transaction occupies a database connection that cannot serve another request.
+
+Connection\-leak detection should also be enabled where supported by the application's connection\-pool implementation.
+
+### Capacity Planning
+
+Connection pool size should not simply be increased without checking database capacity.
+
+Increasing a pool from 50 connections to a much larger number could move the bottleneck into the database server itself.
+
+Connection\-pool sizing should consider:
+
+- Database maximum connections
+- Number of application replicas
+- Query execution time
+- Transaction duration
+- Concurrent request volume
+- Connection acquisition latency
+
+---
+
+## 7\. Final Conclusion
+
+The Four Golden Signals clearly distinguish healthy endpoints from degraded endpoints.
+
+Healthy endpoints maintain low latency, zero error rates, low worker\-thread utilization, and low database connection usage.
+
+The two critically degraded endpoints, POST /api/v1/checkout and POST /api/v1/reports/export, both reach the database connection maximum of **50/50** and develop waiting request queues.
+
+Checkout reaches **142 waiting database requests**, **98% worker\-thread utilization**, **6800 ms P99 latency**, and a **17.65% error rate**.
+
+Reports/export reaches **68 waiting database requests** and a **28.89% error rate**.
+
+The USE analysis rules out CPU, memory, and network bandwidth as the primary bottleneck because utilization remains only **41.5%**, **62.4%**, and **28.3%**, respectively.
+
+Although TCP listen backlog drops reach **48/sec**, the telemetry explains that this occurs because blocked worker threads cannot consume incoming connections.
+
+Therefore, the final diagnosis is:
+
+**Database connection pool saturation is the primary bottleneck causing systemic application degradation. The TCP socket backlog is a secondary symptom of application workers blocked while waiting for database connections.**
+
