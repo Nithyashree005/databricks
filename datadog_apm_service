@@ -1,0 +1,136 @@
+{
+  "investigation_metadata": {
+    "platform": "Datadog APM & Distributed Tracing",
+    "service_name": "payment-api",
+    "environment": "production",
+    "time_window": "Last 15 minutes",
+    "investigation_focus": "Elevated error rate (14.2%) and P99 latency spike (4,850ms)"
+  },
+  "service_map": {
+    "description": "Datadog automated topology map representing upstream and downstream service dependencies.",
+    "nodes": [
+      {
+        "service": "web-storefront",
+        "type": "web",
+        "language": "nodejs",
+        "rpm": 12000,
+        "error_rate_percent": 3.8,
+        "latency_p95_ms": 520,
+        "status": "WARNING"
+      },
+      {
+        "service": "checkout-service",
+        "type": "api",
+        "language": "java",
+        "rpm": 4500,
+        "error_rate_percent": 9.4,
+        "latency_p95_ms": 2800,
+        "status": "DEGRADED"
+      },
+      {
+        "service": "payment-api",
+        "type": "api",
+        "language": "python-fastapi",
+        "rpm": 1800,
+        "error_rate_percent": 14.2,
+        "latency_p95_ms": 4850,
+        "status": "CRITICAL"
+      },
+      {
+        "service": "postgres-payment-db",
+        "type": "database",
+        "engine": "PostgreSQL 15.3",
+        "active_connections": 98,
+        "max_connections": 100,
+        "lock_wait_queue": 34,
+        "status": "CRITICAL"
+      },
+      {
+        "service": "stripe-external-gateway",
+        "type": "third-party",
+        "rpm": 1600,
+        "error_rate_percent": 0.2,
+        "latency_p95_ms": 110,
+        "status": "HEALTHY"
+      }
+    ],
+    "edges": [
+      {
+        "from": "web-storefront",
+        "to": "checkout-service",
+        "call_rate_rpm": 4500,
+        "error_percent": 9.4
+      },
+      {
+        "from": "checkout-service",
+        "to": "payment-api",
+        "call_rate_rpm": 1800,
+        "error_percent": 14.2
+      },
+      {
+        "from": "payment-api",
+        "to": "postgres-payment-db",
+        "call_rate_rpm": 3600,
+        "error_percent": 18.0
+      },
+      {
+        "from": "payment-api",
+        "to": "stripe-external-gateway",
+        "call_rate_rpm": 1600,
+        "error_percent": 0.2
+      }
+    ]
+  },
+  "apm_flame_graph": {
+    "trace_id": "dd-88491029141",
+    "root_resource": "POST /api/v1/payments/process",
+    "total_duration_ms": 5120,
+    "http_status_code": 500,
+    "error_message": "QueryTimeout: Lock wait timeout exceeded; try restarting transaction",
+    "spans": [
+      {
+        "span_id": "span-dd-01",
+        "service": "payment-api",
+        "resource": "POST /api/v1/payments/process",
+        "operation": "fastapi.request",
+        "start_ms": 0,
+        "duration_ms": 5120,
+        "error": 1
+      },
+      {
+        "span_id": "span-dd-02",
+        "service": "payment-api",
+        "resource": "validate_customer_wallet",
+        "operation": "function.call",
+        "start_ms": 5,
+        "duration_ms": 25,
+        "error": 0
+      },
+      {
+        "span_id": "span-dd-03",
+        "service": "payment-api",
+        "resource": "SELECT * FROM payment_accounts WHERE account_id = ? FOR UPDATE",
+        "operation": "postgres.query",
+        "start_ms": 32,
+        "duration_ms": 5008,
+        "error": 1,
+        "meta": {
+          "db.system": "postgresql",
+          "db.name": "payments_prod",
+          "db.statement": "SELECT * FROM payment_accounts WHERE account_id = ? FOR UPDATE",
+          "error.type": "psycopg2.errors.QueryCanceled",
+          "error.msg": "canceling statement due to statement timeout (5000ms)"
+        }
+      },
+      {
+        "span_id": "span-dd-04",
+        "service": "payment-api",
+        "resource": "stripe_external_authorize",
+        "operation": "http.client",
+        "start_ms": 5045,
+        "duration_ms": 70,
+        "error": 0
+      }
+    ]
+  }
+}
