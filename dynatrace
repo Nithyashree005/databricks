@@ -1,0 +1,102 @@
+{
+  "metadata": {
+    "platform": "Dynatrace OneAgent & Davis AI",
+    "investigation_id": "DYN-PROBLEM-78419",
+    "title": "Memory leak leading to OutOfMemoryError in OrderProcessingService",
+    "environment": "production-us-east",
+    "time_window": "Last 30 minutes"
+  },
+  "smartscape_topology": {
+    "datacenter": {
+      "id": "DC-EAST-1",
+      "name": "AWS us-east-1",
+      "status": "HEALTHY"
+    },
+    "hosts": [
+      {
+        "host_id": "HOST-99A1",
+        "name": "prod-app-worker-01.ec2.internal",
+        "os": "Linux 5.15.0",
+        "cpu_cores": 8,
+        "memory_total_gb": 32,
+        "memory_used_gb": 30.8,
+        "status": "CRITICAL"
+      }
+    ],
+    "process_groups": [
+      {
+        "group_id": "PG-JAVA-ORDER",
+        "name": "OrderServices Java Process Group",
+        "technology": "Java 17 (OpenJDK HotSpot)",
+        "process_count": 2,
+        "status": "CRITICAL"
+      }
+    ],
+    "services": [
+      {
+        "service_id": "SERVICE-88A92",
+        "name": "OrderProcessingService",
+        "web_framework": "Spring Boot 3.1.2",
+        "jvm_heap_max_mb": 4096,
+        "jvm_heap_used_mb": 4012,
+        "heap_saturation_percent": 97.9,
+        "status": "CRITICAL",
+        "upstream_services": [
+          "API-Gateway-Service"
+        ],
+        "downstream_services": [
+          "PaymentService",
+          "InventoryDatabase"
+        ]
+      }
+    ],
+    "applications": [
+      {
+        "app_id": "APP-STOREFRONT",
+        "name": "Enterprise E-Commerce Storefront",
+        "apdex": 0.42,
+        "status": "CRITICAL"
+      }
+    ]
+  },
+  "purepath_trace": {
+    "trace_id": "PP-9821410294-819",
+    "root_service": "OrderProcessingService",
+    "entry_point": "POST /api/v2/orders/checkout",
+    "total_duration_ms": 3150,
+    "error": true,
+    "error_message": "java.lang.OutOfMemoryError: Java heap space",
+    "call_tree": [
+      {
+        "step": 1,
+        "class": "org.springframework.web.servlet.DispatcherServlet",
+        "method": "doDispatch",
+        "duration_ms": 3150,
+        "error": true
+      },
+      {
+        "step": 2,
+        "class": "com.enterprise.order.controller.OrderCheckoutController",
+        "method": "processCheckout",
+        "duration_ms": 3145,
+        "error": true
+      },
+      {
+        "step": 3,
+        "class": "com.enterprise.order.service.OrderServiceImpl",
+        "method": "createAndCacheOrder",
+        "duration_ms": 3130,
+        "error": true
+      },
+      {
+        "step": 4,
+        "class": "com.enterprise.order.cache.OrderCache",
+        "method": "addToCache",
+        "duration_ms": 2850,
+        "error": true,
+        "exception": "java.lang.OutOfMemoryError: Java heap space",
+        "details": "Static unbounded ConcurrentHashMap storing OrderSession tokens exceeded 4GB heap space."
+      }
+    ]
+  }
+}
