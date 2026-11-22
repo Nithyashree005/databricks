@@ -1,0 +1,77 @@
+CATALOG = "databricks_operations_training"
+SCHEMA = "alexuser01"
+VOLUME = "day6_data"
+FILE_NAME = "retail_sales.csv"
+
+# Unity Catalog Volume location
+VOLUME_PATH = f"/Volumes/{CATALOG}/{SCHEMA}/{VOLUME}"
+FILE_PATH = f"{VOLUME_PATH}/{FILE_NAME}"
+
+print("Catalog:", CATALOG)
+print("Schema:", SCHEMA)
+print("Volume:", VOLUME)
+print("Expected CSV path:", FILE_PATH)
+
+spark.sql(f"USE CATALOG `{CATALOG}`")
+
+spark.sql(
+    f"CREATE SCHEMA IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`"
+)
+
+spark.sql(f"USE SCHEMA `{SCHEMA}`")
+
+print("Current catalog:", spark.sql("SELECT current_catalog()").first()[0])
+print("Current schema:", spark.sql("SELECT current_schema()").first()[0])
+
+display(spark.sql(f"SHOW VOLUMES IN `{CATALOG}`.`{SCHEMA}`"))
+creating volume
+spark.sql(
+    f"CREATE VOLUME IF NOT EXISTS `{CATALOG}`.`{SCHEMA}`.`{VOLUME}`"
+)
+
+display(
+    spark.sql(f"DESCRIBE VOLUME `{CATALOG}`.`{SCHEMA}`.`{VOLUME}`")
+)
+files = dbutils.fs.ls(VOLUME_PATH)
+display(files)
+
+matching_files = [f.path for f in files if f.name == FILE_NAME]
+if not matching_files:
+    raise FileNotFoundError(
+        f"{FILE_NAME} was not found in {VOLUME_PATH}. "
+        "Upload the CSV through Catalog Explorer, then rerun this cell."
+    )
+
+print("CSV found:", matching_files[0])
+sales = (
+    spark.read
+         .option("header", True)
+         .option("inferSchema", True)
+         .csv(FILE_PATH)
+)
+
+expected_columns = [
+    "transaction_id",
+    "order_date",
+    "region",
+    "product_id",
+    "customer_id",
+    "quantity",
+    "unit_price"
+]
+
+missing_columns = [c for c in expected_columns if c not in sales.columns]
+if missing_columns:
+    raise ValueError(f"CSV is missing expected columns: {missing_columns}")
+
+row_count = sales.count()
+print("Rows:", row_count)
+print("Columns:", sales.columns)
+sales.printSchema()
+display(sales.limit(10))
+
+if row_count != 1000:
+    raise ValueError(
+        f"Expected 1,000 rows but found {row_count}. "
+        "Check that the correct Day 6 CSV was uploaded."
+    )
