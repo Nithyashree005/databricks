@@ -1,0 +1,37 @@
+ INSTRUCTOR ONLY — S2 Reference Evidence (TEL-D1-102)
+
+Use this as a worked example when reviewing participant submissions. The Trace ID below is taken from the training validation screenshots and is illustrative only; runtime traces may have different IDs.
+
+- **Ticket:** TEL-D1-102
+- **Observed customer symptom:** Checkout for `PROD-7729` returns HTTP 500.
+- **Example Trace ID captured in the browser:** `2fb318c8439abc2af7bd3cbd645054a5`
+- **Example Jaeger URL:** `http://localhost:16686/trace/2fb318c8439abc2af7bd3cbd645054a5`
+- **Root operation:** `frontend: POST /api/checkout`
+- **Culprit child operation:** `inventory.reserveStock` in `inventory-service`
+- **Observed child-span duration:** approximately 432 ms in the captured trace (duration varies by run).
+- **Inventory response:** HTTP 409 Conflict.
+- **Checkout response:** HTTP 500 Internal Server Error.
+- **Exception:** `StockReservationException`
+- **Root cause:** SKU `PROD-7729` maps to a warehouse bin locked while a cycle-count audit is in progress. The inventory service raises HTTP 409; checkout deliberately converts the dependency failure into a generic HTTP 500 response.
+
+## Example LogQL
+
+```logql
+{app="inventory-service"} |= "2fb318c8439abc2af7bd3cbd645054a5"
+```
+
+## Example expected log evidence
+
+```text
+ERROR [inventory-service] [trace_id=2fb318c8439abc2af7bd3cbd645054a5, ...]
+StockReservationException: SKU PROD-7729 warehouse bin locked due to cycle count audit
+```
+
+## Instructor grading notes
+
+- Accept any valid 32-character hexadecimal Trace ID captured from the participant's own Jaeger trace URL.
+- The same ID must appear in the Jaeger URL and in the Loki LogQL query; the log line should show that ID when queried.
+- Do not require the participant's ID to equal the seeded example `4bf92f3577b34da6a3ce929d0e0e4736`.
+- Accept a duration close to 430 ms; timing varies with host load.
+- The participant must distinguish inventory HTTP 409 from the outer checkout HTTP 500.
+- The safe operational recommendation is to coordinate with warehouse operations, release the bin after the cycle-count audit is complete, and add an explicit conflict/retry or alternate-bin handling path. Do not tell learners to disable audit controls or modify real inventory.
