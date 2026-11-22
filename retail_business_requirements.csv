@@ -1,0 +1,6 @@
+requirement_id,business_need,target_freshness,data_sources,consumer,success_measure
+REQ-01,Daily sales and margin by store/product,Ready by 06:00 daily,"POS, e-commerce, product, store",Finance BI,Reconciled sales totals and freshness SLA met
+REQ-02,Inventory stockout warning,Under 2 minutes from event,"Inventory events, product, store",Inventory Operations,Alert generated for stock below agreed threshold
+REQ-03,Customer purchase trends,Daily,"POS, e-commerce, customer master",Marketing Analytics,Deduplicated customer/order metrics with governed access
+REQ-04,Product catalog enrichment,Within 24 hours,"Product catalog, supplier invoice files",Merchandising,Validated product attributes and exception handling
+REQ-05,Web conversion funnel,Within 15 minutes,"Web clickstream, e-commerce orders",Digital Analytics,Events and orders joined with documented attribution assumptions
